@@ -332,7 +332,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                     speakText = speakText,
                     speakSpeed = speechRate,
                     source = httpTts,
-                    readTimeout = 300 * 1000L,
+                    readTimeout = 600 * 1000L,
                     coroutineContext = currentCoroutineContext()
                 )
                 var response = analyzeUrl.getResponseAwait()
@@ -370,8 +370,8 @@ class HttpReadAloudService : BaseReadAloudService(),
 
                     is SocketTimeoutException, is ConnectException -> {
                         downloadErrorNo++
-                        if (downloadErrorNo > 5) {
-                            val msg = "tts超时或连接错误超过5次\n${e.localizedMessage}"
+                        if (downloadErrorNo > 1) {
+                            val msg = "tts超时或连接错误超过1次\n${e.localizedMessage}"
                             AppLog.put(msg, e, true)
                             throw e
                         }
@@ -382,8 +382,8 @@ class HttpReadAloudService : BaseReadAloudService(),
                         val msg = "tts下载错误\n${e.localizedMessage}"
                         AppLog.put(msg, e)
                         e.printOnDebug()
-                        if (downloadErrorNo > 5) {
-                            val msg1 = "TTS服务器连续5次错误，已暂停阅读。"
+                        if (downloadErrorNo > 1) {
+                            val msg1 = "TTS服务器连续1次错误，已暂停阅读。"
                             AppLog.put(msg1, e, true)
                             throw e
                         } else {
@@ -435,7 +435,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         FileUtils.listDirsAndFiles(ttsFolderPath)?.forEach {
             val isSilentSound = it.length() == 2160L
             if ((!it.name.startsWith(titleMd5)
-                        && System.currentTimeMillis() - it.lastModified() > 600000)
+                        && System.currentTimeMillis() - it.lastModified() > 1800000)
                 || isSilentSound
             ) {
                 FileUtils.delete(it.absolutePath)
@@ -559,9 +559,9 @@ class HttpReadAloudService : BaseReadAloudService(),
         AppLog.put("朗读错误\n${contentList[nowSpeak]}", error)
         deleteCurrentSpeakFile()
         playErrorNo++
-        if (playErrorNo >= 5) {
-            toastOnUi("朗读连续5次错误, 最后一次错误代码(${error.localizedMessage})")
-            AppLog.put("朗读连续5次错误, 最后一次错误代码(${error.localizedMessage})", error)
+        if (playErrorNo >= 1) {
+            toastOnUi("朗读连续1次错误, 最后一次错误代码(${error.localizedMessage})")
+            AppLog.put("朗读连续1次错误, 最后一次错误代码(${error.localizedMessage})", error)
             pauseReadAloud()
         } else {
             if (exoPlayer.hasNextMediaItem()) {
