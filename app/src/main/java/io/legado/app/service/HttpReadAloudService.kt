@@ -191,7 +191,6 @@ class HttpReadAloudService : BaseReadAloudService(), Player.Listener {
         val contentList = textChapter.getNeedReadAloud(0, readAloudByPage, 0, 1)
             .splitToSequence("\n")
             .filter { it.isNotEmpty() }
-            .take(100) // 改动1：非流式播放缓存下一章100句（原10句）
             .toList()
         contentList.forEach { content ->
             currentCoroutineContext().ensureActive()
