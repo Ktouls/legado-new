@@ -60,6 +60,7 @@ object ReadBookConfig {
     var bgMeanColor: Int = 0
     val textColor: Int get() = durConfig.curTextColor()
     val textAccentColor: Int get() = durConfig.curTextAccentColor()
+    var isNineBgImg = false
 
     init {
         initConfigs()
@@ -753,6 +754,7 @@ object ReadBookConfig {
         }
 
         fun curBgDrawable(width: Int, height: Int): Drawable {
+            isNineBgImg = false
             if (width == 0 || height == 0) {
                 return appCtx.getCompatColor(R.color.background).toDrawable()
             }
@@ -772,8 +774,13 @@ object ReadBookConfig {
                             if (it.contains(File.separator)) it
                             else FileUtils.getPath(appCtx.externalFiles, "bg", curBgStr())
                         }
-                        val bitmap = BitmapUtils.decodeBitmap(path, width, height)
-                        bitmap?.resizeAndRecycle(width, height)?.toDrawable(resources)
+                        if (path.endsWith(".9.png")) {
+                            isNineBgImg = true
+                            BitmapUtils.decodeNinePatchDrawable(path)
+                        } else {
+                            val bitmap = BitmapUtils.decodeBitmap(path, width, height)
+                            bitmap?.resizeAndRecycle(width, height)?.toDrawable(resources)
+                        }
                     }
                 }
             } catch (e: OutOfMemoryError) {

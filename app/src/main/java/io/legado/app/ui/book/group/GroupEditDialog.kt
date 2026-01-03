@@ -24,6 +24,7 @@ import io.legado.app.utils.visible
 import splitties.init.appCtx
 import splitties.views.onClick
 import java.io.FileOutputStream
+import kotlin.collections.contains
 
 class GroupEditDialog() : BaseDialogFragment(R.layout.dialog_book_group_edit) {
 
@@ -37,13 +38,21 @@ class GroupEditDialog() : BaseDialogFragment(R.layout.dialog_book_group_edit) {
     private val viewModel by viewModels<GroupViewModel>()
     private var bookGroup: BookGroup? = null
     private val selectImage = registerForActivityResult(HandleFileContract()) {
-        it.uri ?: return@registerForActivityResult
-        readUri(it.uri) { fileDoc, inputStream ->
+        val uri = it.uri ?: return@registerForActivityResult
+        if (uri.scheme?.lowercase() in listOf("http", "https")) {
+            binding.ivCover.load(uri.toString())
+            return@registerForActivityResult
+        }
+        readUri(uri) { fileDoc, inputStream ->
             try {
                 var file = requireContext().externalFiles
-                val suffix = fileDoc.name.substringAfterLast(".")
+                val suffix = if (fileDoc.name.contains(".9.png", true)) {
+                    ".9.png"
+                } else {
+                    "." + fileDoc.name.substringAfterLast(".")
+                }
                 val fileName = it.uri.inputStream(requireContext()).getOrThrow().use { tmp ->
-                    MD5Utils.md5Encode(tmp) + ".$suffix"
+                    MD5Utils.md5Encode(tmp) + suffix
                 }
                 file = FileUtils.createFileIfNotExist(file, "covers", fileName)
                 FileOutputStream(file).use { outputStream ->
