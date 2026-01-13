@@ -61,8 +61,9 @@ object CacheManager {
         when (value) {
             is ByteArray -> ACache.get().put(key, value, saveTime)
             else -> {
-                val cache = Cache(key, value.toString(), deadline)
-                putMemory(key, value)
+                val valueStr = value.toString()
+                putMemory(key, valueStr)
+                val cache = Cache(key, valueStr, deadline)
                 appDb.cacheDao.insert(cache)
             }
         }
@@ -87,25 +88,50 @@ object CacheManager {
         }
         val cache = appDb.cacheDao.get(key)
         if (cache != null && (cache.deadline == 0L || cache.deadline > System.currentTimeMillis())) {
+            return cache.value?.also {
+                putMemory(key, it)
+            }
+        }
+        return null
+    }
+
+    fun get(key: String, onlyDisk: Boolean): String? {
+        if (!onlyDisk) {
+            return get(key)
+        }
+        val cache = appDb.cacheDao.get(key)
+        if (cache != null && (cache.deadline == 0L || cache.deadline > System.currentTimeMillis())) {
             return cache.value
         }
         return null
     }
 
     fun getInt(key: String): Int? {
-        return get(key)?.toIntOrNull()
+        getFromMemory(key)?.let {
+            if (it is Int) return it
+        }
+        return get(key, true)?.toIntOrNull()
     }
 
     fun getLong(key: String): Long? {
-        return get(key)?.toLongOrNull()
+        getFromMemory(key)?.let {
+            if (it is Long) return it
+        }
+        return get(key, true)?.toLongOrNull()
     }
 
     fun getDouble(key: String): Double? {
-        return get(key)?.toDoubleOrNull()
+        getFromMemory(key)?.let {
+            if (it is Double) return it
+        }
+        return get(key, true)?.toDoubleOrNull()
     }
 
     fun getFloat(key: String): Float? {
-        return get(key)?.toFloatOrNull()
+        getFromMemory(key)?.let {
+            if (it is Float) return it
+        }
+        return get(key, true)?.toFloatOrNull()
     }
 
     fun getByteArray(key: String): ByteArray? {
@@ -138,7 +164,7 @@ object WebCacheManager {
     }
     @JavascriptInterface
     fun getFromMemory(key: String): String? {
-        return memoryLruCache[key] as String?
+        return memoryLruCache[key] as? String
     }
     @JavascriptInterface
     fun deleteMemory(key: String) {
@@ -147,6 +173,10 @@ object WebCacheManager {
     @JavascriptInterface
     fun get(key: String): String? {
         return CacheManager.get(key)
+    }
+    @JavascriptInterface
+    fun get(key: String, onlyDisk: Boolean): String? {
+        return CacheManager.get(key, onlyDisk)
     }
     @JavascriptInterface
     fun putFile(key: String, value: String, saveTime: Int = 0) {

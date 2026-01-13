@@ -121,6 +121,9 @@ interface JsExtensions : JsEncodeUtils {
      * 并发访问网络
      */
     fun ajaxAll(urlList: Array<String>): Array<StrResponse> {
+        return ajaxAll(urlList, false)
+    }
+    fun ajaxAll(urlList: Array<String>, skipRateLimit: Boolean): Array<StrResponse> {
         return runBlocking(context) {
             urlList.asFlow().mapAsync(AppConfig.threadCount) { url ->
                 val analyzeUrl = AnalyzeUrl(
@@ -128,7 +131,7 @@ interface JsExtensions : JsEncodeUtils {
                     source = getSource(),
                     coroutineContext = coroutineContext
                 )
-                analyzeUrl.getStrResponseAwait()
+                analyzeUrl.getStrResponseAwait(skipRateLimit = skipRateLimit)
             }.flowOn(IO).toList().toTypedArray()
         }
     }
@@ -137,6 +140,9 @@ interface JsExtensions : JsEncodeUtils {
      * 并发测试网络
      */
     fun ajaxTestAll(urlList: Array<String>, timeout: Int): Array<StrResponse> {
+        return ajaxTestAll(urlList, timeout, false)
+    }
+    fun ajaxTestAll(urlList: Array<String>, timeout: Int, skipRateLimit: Boolean): Array<StrResponse> {
         return runBlocking(context) {
             urlList.asFlow().mapAsync(AppConfig.threadCount) { url ->
                 val analyzeUrl = AnalyzeUrl(
@@ -145,10 +151,11 @@ interface JsExtensions : JsEncodeUtils {
                     coroutineContext = coroutineContext,
                     callTimeout = timeout.toLong()
                 )
-                analyzeUrl.getStrResponseAwait2()
+                analyzeUrl.getStrResponseAwait(isTest = true, skipRateLimit = skipRateLimit)
             }.flowOn(IO).toList().toTypedArray()
         }
     }
+
 
     /**
      * 访问网络,返回Response<String>

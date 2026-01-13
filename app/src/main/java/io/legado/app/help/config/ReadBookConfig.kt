@@ -330,10 +330,10 @@ object ReadBookConfig {
             config.paragraphIndent = value
         }
 
-    var underline: Boolean
-        get() = config.underline
+    var underlineMode: Int
+        get() = config.underlineMode
         set(value) {
-            config.underline = value
+            config.underlineMode = value
         }
 
     var paddingBottom: Int
@@ -563,7 +563,7 @@ object ReadBookConfig {
         var titleTopSpacing: Int = 0,
         var titleBottomSpacing: Int = 0,
         var paragraphIndent: String = "　　",//段落缩进
-        var underline: Boolean = false, //下划线
+        var underlineMode: Int = 0, //下划线
         var paddingBottom: Int = 6,
         var paddingLeft: Int = 16,
         var paddingRight: Int = 16,
@@ -754,7 +754,8 @@ object ReadBookConfig {
         }
 
         fun curBgDrawable(width: Int, height: Int): Drawable {
-            isNineBgImg = false
+            val curBgStr = curBgStr()
+            isNineBgImg = curBgStr.endsWith(".9.png")
             if (width == 0 || height == 0) {
                 return appCtx.getCompatColor(R.color.background).toDrawable()
             }
@@ -762,20 +763,19 @@ object ReadBookConfig {
             val resources = appCtx.resources
             try {
                 bgDrawable = when (curBgType()) {
-                    0 -> curBgStr().toColorInt().toDrawable()
+                    0 -> curBgStr.toColorInt().toDrawable()
                     1 -> {
-                        val path = "bg" + File.separator + curBgStr()
+                        val path = "bg" + File.separator + curBgStr
                         val bitmap = BitmapUtils.decodeAssetsBitmap(appCtx, path, width, height)
                         bitmap?.resizeAndRecycle(width, height)?.toDrawable(resources)
                     }
 
                     else -> {
-                        val path = curBgStr().let {
+                        val path = curBgStr.let {
                             if (it.contains(File.separator)) it
-                            else FileUtils.getPath(appCtx.externalFiles, "bg", curBgStr())
+                            else FileUtils.getPath(appCtx.externalFiles, "bg", it)
                         }
-                        if (path.endsWith(".9.png")) {
-                            isNineBgImg = true
+                        if (isNineBgImg) {
                             BitmapUtils.decodeNinePatchDrawable(path)
                         } else {
                             val bitmap = BitmapUtils.decodeBitmap(path, width, height)
@@ -852,7 +852,7 @@ object ReadBookConfig {
             "titleTopSpacing" to titleTopSpacing,
             "titleBottomSpacing" to titleBottomSpacing,
             "paragraphIndent" to paragraphIndent,
-            "underline" to underline,
+            "underlineMode" to underlineMode,
             "paddingBottom" to paddingBottom,
             "paddingLeft" to paddingLeft,
             "paddingRight" to paddingRight,

@@ -40,6 +40,19 @@ data class HttpTTS(
         return "httpTts:$id"
     }
 
+    fun equal(source: HttpTTS): Boolean {
+        return name == source.name &&
+                url == source.url &&
+                contentType == source.contentType &&
+                concurrentRate == source.concurrentRate &&
+                loginUrl == source.loginUrl &&
+                loginUi == source.loginUi &&
+                header == source.header &&
+                jsLib == source.jsLib &&
+                enabledCookieJar == source.enabledCookieJar &&
+                loginCheckJs == source.loginCheckJs
+    }
+
     @Suppress("MemberVisibilityCanBePrivate")
     companion object {
 
@@ -56,7 +69,8 @@ data class HttpTTS(
                     loginUi = if (loginUi is List<*>) GSON.toJson(loginUi) else loginUi?.toString(),
                     header = doc.readString("$.header"),
                     loginCheckJs = doc.readString("$.loginCheckJs"),
-                    lastUpdateTime = doc.readLong("$.lastUpdateTime") ?: System.currentTimeMillis()
+                    lastUpdateTime = doc.readLong("$.lastUpdateTime") ?: System.currentTimeMillis(),
+                    jsLib = doc.readString("$.jsLib")
                 )
             }
         }

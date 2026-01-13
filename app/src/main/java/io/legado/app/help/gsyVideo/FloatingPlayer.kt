@@ -44,7 +44,7 @@ class FloatingPlayer : StandardGSYVideoPlayer {
     }
 
 
-    override fun onAutoCompletion() {
+    override fun onAutoCompletion() { //自动播放完成
         setStateAndUi(CURRENT_STATE_AUTO_COMPLETE)
         mSaveChangeViewTIme = 0
         if (mTextureViewContainer.isNotEmpty()) {
@@ -109,7 +109,6 @@ class FloatingPlayer : StandardGSYVideoPlayer {
 
     override fun onError(what: Int, extra: Int) {
         super.onError(what, extra)
-        VideoPlay.durChapterPos = VideoPlay.videoManager.getCurrentPosition().toInt()
         VideoPlay.saveRead()
         mSeekOnStart = VideoPlay.durChapterPos.toLong()
     }

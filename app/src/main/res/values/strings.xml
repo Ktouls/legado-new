@@ -1035,6 +1035,9 @@
     <string name="page_touch_slop_title">Sliding Page Threshold</string>
     <string name="page_touch_slop_dialog_title">Sliding page turn threshold (0 = system default)</string>
     <string name="page_touch_slop_summary">How far to slide to trigger a page slide (system default %s px)</string>
+    <string name="page_touch_click_title">边缘点击阈值</string>
+    <string name="page_touch_click_summary">左右边缘多少距离不会触发点击事件，默认为0px</string>
+    <string name="page_touch_click_dialog_title">边缘点击阈值</string>
     <string name="check_selected_interval">Select zones</string>
     <string name="show_add_to_shelf_alert_title">Prompt to add to bookshelf when return</string>
     <string name="show_add_to_shelf_alert_summary">Prompt to add to bookshelf when return from reading books that are not on the bookshelf</string>
@@ -1306,7 +1309,8 @@
     <string name="whitespace_empty">空行</string>
     <string name="line_separator">换行</string>
     <string name="whitespace_selection">选中</string>
-    <string name="press_speed">长按倍速 %.1f</string>
+    <string name="press_speed">长按倍速</string>
+    <string name="press_speed_summary">长按倍速 %.1f</string>
     <string name="full_bottom_progress">全屏时显示底部进度条</string>
     <string name="json_format">json格式</string>
     <string name="open_other_video_player">其它播放器打开</string>
@@ -1330,4 +1334,5 @@
     <string name="enter_img_src_path">请输入图片链接</string>
     <string name="empty_img_src_input">图片链接不能为空</string>
     <string name="invalid_file_path">文件路径无效</string>
+    <string name="is_system_tts_no_export">无法导出系统tts</string>
 </resources>

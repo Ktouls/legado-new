@@ -10,7 +10,6 @@ import android.widget.EditText
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.widget.Toolbar
 import androidx.fragment.app.viewModels
-import com.google.android.material.textfield.TextInputLayout
 import io.legado.app.R
 import io.legado.app.base.BaseDialogFragment
 import io.legado.app.data.entities.HttpTTS
@@ -70,6 +69,11 @@ class HttpTtsEditDialog() : BaseDialogFragment(R.layout.dialog_http_tts_edit, tr
             addJsonPattern()
             addJsPattern()
         }
+        binding.tvJsLib.run {
+            addLegadoPattern()
+            addJsonPattern()
+            addJsPattern()
+        }
         viewModel.initData(arguments) {
             initView(httpTTS = it)
         }
@@ -91,6 +95,7 @@ class HttpTtsEditDialog() : BaseDialogFragment(R.layout.dialog_http_tts_edit, tr
         binding.tvLoginUi.setText(httpTTS.loginUi)
         binding.tvLoginCheckJs.setText(httpTTS.loginCheckJs)
         binding.tvHeaders.setText(httpTTS.header)
+        binding.tvJsLib.setText(httpTTS.jsLib)
     }
 
 
@@ -128,6 +133,7 @@ class HttpTtsEditDialog() : BaseDialogFragment(R.layout.dialog_http_tts_edit, tr
         when (item?.itemId) {
             R.id.menu_fullscreen_edit -> onFullEditClicked()
             R.id.menu_save -> viewModel.save(dataFromView()) {
+                dismissAllowingStateLoss()
                 toastOnUi("保存成功")
             }
             R.id.menu_login -> dataFromView().let { httpTts ->
@@ -171,8 +177,28 @@ class HttpTtsEditDialog() : BaseDialogFragment(R.layout.dialog_http_tts_edit, tr
             loginUrl = binding.tvLoginUrl.text?.toString(),
             loginUi = binding.tvLoginUi.text?.toString(),
             loginCheckJs = binding.tvLoginCheckJs.text?.toString(),
-            header = binding.tvHeaders.text?.toString()
+            header = binding.tvHeaders.text?.toString(),
+            jsLib = binding.tvJsLib.text?.toString()
         )
+    }
+
+    private fun isSame(): Boolean{
+        val httpTTS = viewModel.httpTTS ?: return binding.tvName.text.toString().isEmpty()
+        return dataFromView().equal(httpTTS)
+    }
+
+    override fun dismiss() {
+        if (!isSame()) {
+            alert(R.string.exit) {
+                setMessage(R.string.exit_no_save)
+                positiveButton(R.string.yes)
+                negativeButton(R.string.no) {
+                    super.dismiss()
+                }
+            }
+        } else {
+            super.dismiss()
+        }
     }
 
 }

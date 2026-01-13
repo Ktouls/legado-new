@@ -3,7 +3,6 @@ package io.legado.app.ui.book.read
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.res.Configuration
-import android.net.Uri
 import android.os.Bundle
 import android.os.Looper
 import android.view.Gravity
@@ -140,6 +139,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.core.net.toUri
 
 /**
  * 阅读界面
@@ -239,6 +239,7 @@ class ReadBookActivity : BaseReadBookActivity(),
     override val pageFactory get() = binding.readView.pageFactory
     override val pageDelegate get() = binding.readView.pageDelegate
     override val headerHeight: Int get() = binding.readView.curPage.headerHeight
+    override val imgBgPaddingStart: Int get() = binding.readView.curPage.imgBgPaddingStart
     private val nextPageDebounce by lazy { Debounce { keyPage(PageDirection.NEXT) } }
     private val prevPageDebounce by lazy { Debounce { keyPage(PageDirection.PREV) } }
     private var bookChanged = false
@@ -1461,7 +1462,7 @@ class ReadBookActivity : BaseReadBookActivity(),
                             value = src
                         }
                     } else {
-                        viewModel.saveImage(src, Uri.parse(path))
+                        viewModel.saveImage(src, path.toUri())
                     }
                 }
 
@@ -1692,6 +1693,7 @@ class ReadBookActivity : BaseReadBookActivity(),
         popupAction.dismiss()
         binding.readView.onDestroy()
         ReadBook.unregister(this)
+        handler.removeCallbacksAndMessages(null) // 清理Handler消息
         if (!ReadBook.inBookshelf && !isChangingConfigurations) {
             viewModel.removeFromBookshelf(null)
         }
@@ -1724,6 +1726,7 @@ class ReadBookActivity : BaseReadBookActivity(),
                     9 -> readView.invalidateTextPage()
                     10 -> ChapterProvider.upLayout()
                     11 -> readView.submitRenderTask()
+                    12 -> readView.upPageTouchClick()
                 }
             }
         }

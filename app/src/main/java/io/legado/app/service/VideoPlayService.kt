@@ -172,8 +172,8 @@ class VideoPlayService : BaseService() {
                 stopSelf()
                 return START_NOT_STICKY
             }
-            VideoPlay.saveRead()
             VideoPlay.startPlay(playerView)
+            VideoPlay.saveRead()
         } else {
             VideoPlay.clonePlayState(playerView)
             playerView.setSurfaceToPlay()
@@ -386,10 +386,7 @@ class VideoPlayService : BaseService() {
             }
             override fun onAutoComplete(url: String?, vararg objects: Any?) {
                 super.onAutoComplete(url, *objects)
-                if (VideoPlay.upDurIndex(1)) {
-                    VideoPlay.saveRead()
-                    VideoPlay.startPlay(playerView)
-                } else {
+                if (!VideoPlay.upDurIndex(1, playerView)) {
                     stopSelf()
                 }
             }
@@ -420,6 +417,7 @@ class VideoPlayService : BaseService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        VideoPlay.saveRead()
         try {
             if (::windowManager.isInitialized && floatingView.parent != null) {
                 windowManager.removeView(floatingView)

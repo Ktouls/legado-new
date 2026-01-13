@@ -49,12 +49,15 @@ import io.legado.app.utils.isJsonArray
 import io.legado.app.utils.isJsonObject
 import io.legado.app.utils.isXml
 import io.legado.app.utils.parseIpsFromString
+import io.legado.app.utils.stackTraceStr
 import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.Dns
+import okhttp3.Request
+import okhttp3.ResponseBody.Companion.toResponseBody
 import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.net.URLEncoder
@@ -188,9 +191,9 @@ class AnalyzeUrl(
             //替换所有内嵌{{js}}
             val url = analyze.innerRule("{{", "}}") {
                 val jsEval = evalJS(it) ?: ""
-                when {
-                    jsEval is String -> jsEval
-                    jsEval is Double && jsEval % 1.0 == 0.0 -> String.format("%.0f", jsEval)
+                when (jsEval) {
+                    is String -> jsEval
+                    is Double if jsEval % 1.0 == 0.0 -> String.format("%.0f", jsEval)
                     else -> jsEval.toString()
                 }
             }
@@ -404,13 +407,30 @@ class AnalyzeUrl(
         jsStr: String? = null,
         sourceRegex: String? = null,
         useWebView: Boolean = true,
+        isTest: Boolean = false,
+        skipRateLimit: Boolean = false
     ): StrResponse {
         if (type != null) {
             return StrResponse(url, HexUtil.encodeHexStr(getByteArrayAwait()))
         }
+        if (skipRateLimit) {
+            return executeStrRequest(jsStr, sourceRegex, useWebView, isTest)
+        }
         concurrentRateLimiter.withLimit {
-            setCookie()
-            val strResponse: StrResponse
+            return executeStrRequest(jsStr, sourceRegex, useWebView, isTest)
+        }
+    }
+
+    private suspend fun executeStrRequest(
+        jsStr: String? = null,
+        sourceRegex: String? = null,
+        useWebView: Boolean = true,
+        isTest: Boolean = false
+    ): StrResponse {
+        setCookie()
+        val startTime = System.currentTimeMillis()
+        val strResponse: StrResponse
+        try {
             if (this.useWebView && useWebView) {
                 strResponse = when (method) {
                     RequestMethod.POST -> {
@@ -469,57 +489,33 @@ class AnalyzeUrl(
                     if (isXml && it.body?.trim()?.startsWith("<?xml", true) == false) {
                         StrResponse(it.raw, "<?xml version=\"1.0\"?>" + it.body)
                     } else if (bodyJs != null) {
-                        val body = evalJS(bodyJs!!,it.body).toString()
+                        val body = evalJS(bodyJs!!, it.body).toString()
                         StrResponse(it.raw, body)
                     } else it
                 }
             }
+            val connectionTime = System.currentTimeMillis() - startTime
+            strResponse.putCallTime(connectionTime.toInt())
             return strResponse
-        }
-    }
-
-    /**
-     * 测试网址连接,返回带响应时间的StrResponse
-     * 只有get请求,用来测试网站可用性
-     */
-    suspend fun getStrResponseAwait2(): StrResponse {
-        if (type != null) {
-            return StrResponse(url, HexUtil.encodeHexStr(getByteArrayAwait()))
-        }
-        concurrentRateLimiter.withLimit {
-            setCookie()
-            val startTime = System.currentTimeMillis()
-            return try {
-                val strResponse: StrResponse = getClient().newCallStrResponse(retry) {
-                    addHeaders(headerMap)
-                    get(urlNoQuery, encodedQuery)
-                }.let {
-                    val connectionTime = System.currentTimeMillis() - startTime
-                    it.putCallTime(connectionTime.toInt())
-                    val isXml = it.raw.body.contentType()?.toString()
-                        ?.matches(AppPattern.xmlContentTypeRegex) == true
-                    if (isXml && it.body?.trim()?.startsWith("<?xml", true) == false) {
-                        StrResponse(it.raw, "<?xml version=\"1.0\"?>" + it.body)
-                    } else it
+        } catch (e: Exception) {
+            if (!isTest) {
+                throw e
+            }
+            val errorCode = when (e) {
+                is java.net.SocketTimeoutException -> -2  // 超时错误
+                is java.net.UnknownHostException -> -3   // 未找到域名
+                is java.net.ConnectException -> -4       // 连接被拒绝
+                is java.net.SocketException -> -5        // Socket错误（包括连接重置）
+                is javax.net.ssl.SSLException -> -6      // SSL证书或握手错误
+                is java.io.InterruptedIOException -> {
+                    if (e.message?.contains("timeout") == true) {
+                        -1  // 超过设定时间
+                    } else -7
                 }
-                strResponse
-            } catch (e: Exception) {
-                val errorCode = when (e) {
-                    is java.net.SocketTimeoutException -> -2  // 超时错误
-                    is java.net.UnknownHostException -> -3   // 未找到域名
-                    is java.net.ConnectException -> -4       // 连接被拒绝
-                    is java.net.SocketException -> -5        // Socket错误（包括连接重置）
-                    is javax.net.ssl.SSLException -> -6      // SSL证书或握手错误
-                    is java.io.InterruptedIOException -> {
-                        if (e.message?.contains("timeout") == true) {
-                            -1  // 超过设定时间
-                        } else -7
-                    }
-                    else -> -7  // 其它错误
-                }
-                return StrResponse(url, e.message).apply {
-                    putCallTime(errorCode)
-                }
+                else -> -7  // 其它错误
+            }
+            return StrResponse(url, e.message).apply {
+                putCallTime(errorCode)
             }
         }
     }
@@ -564,6 +560,23 @@ class AnalyzeUrl(
             return response
         }
     }
+
+    /**
+     * 返回一个errResponse
+     */
+    fun getErrResponse(e: Exception): Response = Response.Builder()
+        .request(Request.Builder().url(url).build())
+        .protocol(okhttp3.Protocol.HTTP_1_1)
+        .code(500)
+        .message(e.message ?: "Error Response")
+        .body(e.stackTraceStr.toResponseBody(null))
+        .build()
+
+    /**
+     * 返回一个errStrResponse
+     */
+    fun getErrStrResponse(e: Exception): StrResponse =
+        StrResponse(getErrResponse(e), e.stackTraceStr)
 
     private fun getClient(): OkHttpClient {
         val client = getProxyClient(proxy)

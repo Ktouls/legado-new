@@ -12,8 +12,8 @@ import io.legado.app.model.analyzeRule.RuleData
 import io.legado.app.utils.NetworkUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.coroutineContext
 
 @Suppress("MemberVisibilityCanBePrivate")
 object Rss {
@@ -46,10 +46,26 @@ object Rss {
             key = key,
             source = rssSource,
             ruleData = ruleData,
-            coroutineContext = coroutineContext,
+            coroutineContext = currentCoroutineContext(),
             hasLoginHeader = false
         )
-        val res = analyzeUrl.getStrResponseAwait()
+        var res = try {
+            analyzeUrl.getStrResponseAwait()
+        } catch (e: Exception) {
+            rssSource.loginCheckJs?.let { checkJs ->
+                if (checkJs.isNotBlank()) {
+                    val errStrResponse = analyzeUrl.getErrStrResponse(e)
+                    analyzeUrl.evalJS(checkJs, errStrResponse) as StrResponse
+                }
+            }
+            throw e
+        }
+        //检测源是否已登录
+        rssSource.loginCheckJs?.let { checkJs ->
+            if (checkJs.isNotBlank()) {
+                res = analyzeUrl.evalJS(checkJs, res) as StrResponse
+            }
+        }
         checkRedirect(rssSource, res)
         return RssParserByRule.parseXML(sortName, sortUrl, res.url, res.body, rssSource, ruleData)
     }
@@ -76,17 +92,33 @@ object Rss {
             baseUrl = rssArticle.origin,
             source = rssSource,
             ruleData = rssArticle,
-            coroutineContext = coroutineContext,
+            coroutineContext = currentCoroutineContext(),
             hasLoginHeader = false
         )
-        val res = analyzeUrl.getStrResponseAwait()
+        var res = try {
+            analyzeUrl.getStrResponseAwait()
+        } catch (e: Exception) {
+            rssSource.loginCheckJs?.let { checkJs ->
+                if (checkJs.isNotBlank()) {
+                    val errStrResponse = analyzeUrl.getErrStrResponse(e)
+                    analyzeUrl.evalJS(checkJs, errStrResponse) as StrResponse
+                }
+            }
+            throw e
+        }
+        //检测源是否已登录
+        rssSource.loginCheckJs?.let { checkJs ->
+            if (checkJs.isNotBlank()) {
+                res = analyzeUrl.evalJS(checkJs, res) as StrResponse
+            }
+        }
         checkRedirect(rssSource, res)
         Debug.log(rssSource.sourceUrl, "≡获取成功:${rssSource.sourceUrl}")
         Debug.log(rssSource.sourceUrl, res.body ?: "", state = 20)
         val analyzeRule = AnalyzeRule(rssArticle, rssSource)
         analyzeRule.setContent(res.body)
             .setBaseUrl(NetworkUtils.getAbsoluteURL(rssArticle.origin, rssArticle.link))
-            .setCoroutineContext(coroutineContext)
+            .setCoroutineContext(currentCoroutineContext())
             .setRedirectUrl(res.url)
         return analyzeRule.getString(ruleContent)
     }

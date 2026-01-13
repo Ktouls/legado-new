@@ -328,9 +328,20 @@ class HttpReadAloudService : BaseReadAloudService(), Player.Listener {
                     readTimeout = 300 * 1000L, // 改动2：超时时间600秒→300秒
                     coroutineContext = currentCoroutineContext()
                 )
-                var response = analyzeUrl.getResponseAwait()
-                currentCoroutineContext().ensureActive()
                 val checkJs = httpTts.loginCheckJs
+                var response = try {
+                    analyzeUrl.getResponseAwait()
+                } catch (e: Exception) {
+                    currentCoroutineContext().ensureActive()
+                    if (checkJs?.isNotBlank() == true) {
+                        val errResponse = analyzeUrl.getErrResponse(e)
+                        try {
+                            analyzeUrl.evalJS(checkJs, errResponse)
+                        } catch (_: Exception) { }
+                    }
+                    throw e
+                }
+                currentCoroutineContext().ensureActive()
                 if (checkJs?.isNotBlank() == true) {
                     response = analyzeUrl.evalJS(checkJs, response) as Response
                 }

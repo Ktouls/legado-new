@@ -66,7 +66,17 @@ object WebBook {
             ruleData = ruleData,
             coroutineContext = currentCoroutineContext()
         )
-        var res = analyzeUrl.getStrResponseAwait()
+        var res = try {
+            analyzeUrl.getStrResponseAwait()
+        } catch (e: Exception) {
+            bookSource.loginCheckJs?.let { checkJs ->
+                if (checkJs.isNotBlank()) {
+                    val errStrResponse = analyzeUrl.getErrStrResponse(e)
+                    analyzeUrl.evalJS(checkJs, errStrResponse) as StrResponse
+                }
+            }
+            throw e
+        }
         //检测书源是否已登录
         bookSource.loginCheckJs?.let { checkJs ->
             if (checkJs.isNotBlank()) {
@@ -116,7 +126,17 @@ object WebBook {
             ruleData = ruleData,
             coroutineContext = currentCoroutineContext()
         )
-        var res = analyzeUrl.getStrResponseAwait()
+        var res = try {
+            analyzeUrl.getStrResponseAwait()
+        } catch (e: Exception) {
+            bookSource.loginCheckJs?.let { checkJs ->
+                if (checkJs.isNotBlank()) {
+                    val errStrResponse = analyzeUrl.getErrStrResponse(e)
+                    analyzeUrl.evalJS(checkJs, errStrResponse) as StrResponse
+                }
+            }
+            throw e
+        }
         //检测书源是否已登录
         bookSource.loginCheckJs?.let { checkJs ->
             if (checkJs.isNotBlank()) {
@@ -173,7 +193,17 @@ object WebBook {
                 ruleData = book,
                 coroutineContext = currentCoroutineContext()
             )
-            var res = analyzeUrl.getStrResponseAwait()
+            var res = try {
+                analyzeUrl.getStrResponseAwait()
+            } catch (e: Exception) {
+                bookSource.loginCheckJs?.let { checkJs ->
+                    if (checkJs.isNotBlank()) {
+                        val errStrResponse = analyzeUrl.getErrStrResponse(e)
+                        analyzeUrl.evalJS(checkJs, errStrResponse) as StrResponse
+                    }
+                }
+                throw e
+            }
             //检测书源是否已登录
             bookSource.loginCheckJs?.let { checkJs ->
                 if (checkJs.isNotBlank()) {
@@ -252,7 +282,17 @@ object WebBook {
                     ruleData = book,
                     coroutineContext = currentCoroutineContext()
                 )
-                var res = analyzeUrl.getStrResponseAwait()
+                var res = try {
+                    analyzeUrl.getStrResponseAwait()
+                } catch (e: Exception) {
+                    bookSource.loginCheckJs?.let { checkJs ->
+                        if (checkJs.isNotBlank()) {
+                            val errStrResponse = analyzeUrl.getErrStrResponse(e)
+                            analyzeUrl.evalJS(checkJs, errStrResponse) as StrResponse
+                        }
+                    }
+                    throw e
+                }
                 //检测书源是否已登录
                 bookSource.loginCheckJs?.let { checkJs ->
                     if (checkJs.isNotBlank()) {
@@ -307,7 +347,8 @@ object WebBook {
         nextChapterUrl: String? = null,
         needSave: Boolean = true
     ): String {
-        if (bookSource.getContentRule().content.isNullOrEmpty()) {
+        val contentRule = bookSource.getContentRule()
+        if (contentRule.content.isNullOrEmpty()) {
             Debug.log(bookSource.bookSourceUrl, "⇒正文规则为空,使用章节链接:${bookChapter.url}")
             return bookChapter.url
         }
@@ -335,10 +376,20 @@ object WebBook {
                 chapter = bookChapter,
                 coroutineContext = currentCoroutineContext()
             )
-            var res = analyzeUrl.getStrResponseAwait(
-                jsStr = bookSource.getContentRule().webJs,
-                sourceRegex = bookSource.getContentRule().sourceRegex
-            )
+            var res = try {
+                analyzeUrl.getStrResponseAwait(
+                    jsStr = contentRule.webJs,
+                    sourceRegex = contentRule.sourceRegex
+                )
+            } catch (e: Exception) {
+                bookSource.loginCheckJs?.let { checkJs ->
+                    if (checkJs.isNotBlank()) {
+                        val errStrResponse = analyzeUrl.getErrStrResponse(e)
+                        analyzeUrl.evalJS(checkJs, errStrResponse) as StrResponse
+                    }
+                }
+                throw e
+            }
             //检测书源是否已登录
             bookSource.loginCheckJs?.let { checkJs ->
                 if (checkJs.isNotBlank()) {

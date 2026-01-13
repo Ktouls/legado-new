@@ -35,8 +35,14 @@ import io.legado.app.utils.stackBlur
 import splitties.init.appCtx
 import java.io.File
 import androidx.core.graphics.drawable.toDrawable
+import io.legado.app.help.coroutine.Coroutine
+import io.legado.app.help.http.newCallResponse
+import io.legado.app.help.http.okHttpClient
+import io.legado.app.utils.MD5Utils
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.putPrefBoolean
+import io.legado.app.utils.toastOnUi
+import java.io.FileOutputStream
 
 @Keep
 object ThemeConfig {
@@ -47,6 +53,8 @@ object ThemeConfig {
         val cList = getConfigs() ?: DefaultData.themeConfigs
         ArrayList(cList)
     }
+
+    private var needClearImg = true
 
     fun getTheme() = when {
         AppConfig.isEInkMode -> Theme.EInk
@@ -80,32 +88,54 @@ object ThemeConfig {
         AppCompatDelegate.setDefaultNightMode(targetMode)
     }
 
+    /**
+     * 获取链接获取图片文件名
+     */
+    private fun getUrlToFile(url: String): String {
+        val suffix = when {
+            url.contains(".9.png", ignoreCase = true) -> ".9.png"
+            url.contains(".png", ignoreCase = true) -> ".png"
+            url.contains(".gif", ignoreCase = true) -> ".gif"
+            url.contains("webp", ignoreCase = true) -> ".webp"
+            else -> ".jpg"
+        }
+        return MD5Utils.md5Encode16(url) + suffix
+    }
+
     fun getBgImage(context: Context, metrics: DisplayMetrics): Drawable? {
-        val bgCfg = when (getTheme()) {
-            Theme.Light -> Pair(
-                context.getPrefString(PreferKey.bgImage),
-                context.getPrefInt(PreferKey.bgImageBlurring, 0)
-            )
-
-            Theme.Dark -> Pair(
-                context.getPrefString(PreferKey.bgImageN),
-                context.getPrefInt(PreferKey.bgImageNBlurring, 0)
-            )
-
-            else -> null
-        } ?: return null
-        val path = bgCfg.first
+        val themeMode = getTheme()
+        val preferenceKey = when (themeMode) {
+            Theme.Light -> PreferKey.bgImage
+            Theme.Dark -> PreferKey.bgImageN
+            else -> return  null
+        }
+        var path = context.getPrefString(preferenceKey)
         if (path.isNullOrBlank()) return null
+        if (path.startsWith("http")) {
+            val name = getUrlToFile(path)
+            val fileRoot = context.externalFiles
+            val filePath = FileUtils.getPath(fileRoot, preferenceKey, name)
+            if (!FileUtils.exist(filePath)) {
+                appCtx.toastOnUi("未缓存在线背景图\n请重新应用主题")
+                return null
+            }
+            path = filePath
+        }
         if (path.endsWith(".9.png")) {
             val bgDrawable = BitmapUtils.decodeNinePatchDrawable(path)
             return bgDrawable
         }
+        val bgImgBlu = when (themeMode) {
+            Theme.Light -> context.getPrefInt(PreferKey.bgImageBlurring, 0)
+            Theme.Dark -> context.getPrefInt(PreferKey.bgImageNBlurring, 0)
+            else -> 0
+        }
         val bgImage = BitmapUtils
             .decodeBitmap(path, metrics.widthPixels, metrics.heightPixels)
-        if (bgCfg.second == 0) {
+        if (bgImgBlu == 0) {
             return bgImage?.toDrawable(context.resources)
         }
-        return bgImage?.stackBlur(bgCfg.second)?.toDrawable(context.resources)
+        return bgImage?.stackBlur(bgImgBlu)?.toDrawable(context.resources)
     }
 
     fun upConfig() {
@@ -197,15 +227,53 @@ object ThemeConfig {
 
     fun applyConfig(context: Context, config: Config) {
         try {
-            clearBg()
+            if (needClearImg) {
+                needClearImg = false
+                clearBg(context)
+            }
             val primary = config.primaryColor.toColorInt()
             val accent = config.accentColor.toColorInt()
             val background = config.backgroundColor.toColorInt()
             val bBackground = config.bottomBackground.toColorInt()
+            val isNightTheme = config.isNightTheme
             val transparentNavBar = config.transparentNavBar
             val backgroundPath = config.backgroundImgPath
+            if (backgroundPath != null && backgroundPath.startsWith("http")) {
+                val fileRoot = context.externalFiles
+                val preferenceKey = if (isNightTheme) {
+                    PreferKey.bgImageN
+                } else {
+                    PreferKey.bgImage
+                }
+                val name = getUrlToFile(backgroundPath)
+                val fileFold = File(fileRoot, preferenceKey)
+                if (!fileFold.exists()) {
+                    fileFold.mkdirs()
+                }
+                val fileImg = File(fileFold, name)
+                if (!fileImg.exists()) {
+                    appCtx.toastOnUi("下载背景图片中...")
+                    Coroutine.async {
+                        kotlin.runCatching {
+                            val res = okHttpClient.newCallResponse(0) {
+                                url(backgroundPath)
+                            }
+                            res.body.byteStream().use { inputStream ->
+                                FileOutputStream(fileImg).use { outputStream ->
+                                    inputStream.copyTo(outputStream)
+                                }
+                            }
+                        }.onSuccess {
+                            appCtx.toastOnUi("背景图下载成功\n请重新应用主题")
+                        }.onFailure {
+                            appCtx.toastOnUi(it.localizedMessage)
+                        }
+                    }
+                    return
+                }
+            }
             val backgroundBlur = config.backgroundImgBlur
-            if (config.isNightTheme) {
+            if (isNightTheme) {
                 context.putPrefString(PreferKey.dNThemeName, config.themeName)
                 context.putPrefInt(PreferKey.cNPrimary, primary)
                 context.putPrefInt(PreferKey.cNAccent, accent)
@@ -224,7 +292,7 @@ object ThemeConfig {
                 context.putPrefString(PreferKey.bgImage, backgroundPath)
                 context.putPrefInt(PreferKey.bgImageBlurring, backgroundBlur)
             }
-            AppConfig.isNightTheme = config.isNightTheme
+            AppConfig.isNightTheme = isNightTheme
             applyDayNight(context)
         } catch (e: Exception) {
             AppLog.put("设置主题出错\n$e", e, true)
@@ -383,10 +451,27 @@ object ThemeConfig {
         }
     }
 
-    fun clearBg() {
+    fun clearBg(context: Context) {
         val (nightConfigs, dayConfigs) = configList.partition { it.isNightTheme }
-        val nightBackgroundImgPaths = nightConfigs.mapNotNull { it.backgroundImgPath }
-        val dayBackgroundImgPaths = dayConfigs.mapNotNull { it.backgroundImgPath }
+        val fileRoot = context.externalFiles
+        val nightBackgroundImgPaths = nightConfigs.mapNotNull {
+            val path = it.backgroundImgPath ?: return@mapNotNull null
+            if (path.startsWith("http")) {
+                val name = getUrlToFile(path)
+                FileUtils.getPath(fileRoot, PreferKey.bgImageN, name)
+            } else {
+                path
+            }
+        }
+        val dayBackgroundImgPaths = dayConfigs.mapNotNull {
+            val path = it.backgroundImgPath ?: return@mapNotNull null
+            if (path.startsWith("http")) {
+                val name = getUrlToFile(path)
+                FileUtils.getPath(fileRoot, PreferKey.bgImage, name)
+            } else {
+                path
+            }
+        }
         appCtx.externalFiles.getFile(PreferKey.bgImage).listFiles()?.forEach {
             if (!dayBackgroundImgPaths.contains(it.absolutePath)) {
                 it.delete()
