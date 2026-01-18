@@ -28,6 +28,7 @@ import com.script.ScriptException
 import io.legado.app.R
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.AppPattern
+import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
@@ -44,6 +45,7 @@ import io.legado.app.model.analyzeRule.AnalyzeUrl
 import io.legado.app.ui.book.read.page.entities.TextChapter
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.MD5Utils
+import io.legado.app.utils.getPrefString
 import io.legado.app.utils.printOnDebug
 import io.legado.app.utils.servicePendingIntent
 import io.legado.app.utils.toastOnUi
@@ -68,8 +70,7 @@ import java.net.SocketTimeoutException
 import kotlin.coroutines.coroutineContext
 
 /**
- * 在线朗读服务 (原版 - 终极修复版 V2)
- * 修正：ReplaceRuleDao 方法名为 allEnabled，优化循环语法
+ * 在线朗读服务 (原版专用 - 预下载修复版)
  */
 @SuppressLint("UnsafeOptInUsageError")
 class HttpReadAloudService : BaseReadAloudService(),
@@ -214,13 +215,18 @@ class HttpReadAloudService : BaseReadAloudService(),
     private suspend fun preDownloadAudios(httpTts: HttpTTS) {
         val book = ReadBook.book ?: return
         val currentIdx = ReadBook.durChapterIndex
-        val limit = AppConfig.preDownloadNum 
         
+        // 修正 1：安全读取设置。由于 UI 是 EditText，数据存的是 String，需转 Int
+        val limitStr = appCtx.getPrefString(PreferKey.preDownloadNum)
+        val limit = limitStr?.toIntOrNull() ?: AppConfig.preDownloadNum
+        
+        AppLog.putDebug("听书预载启动：计划缓存后续 $limit 章")
+
         for (i in 1..limit) {
             try {
                 currentCoroutineContext().ensureActive()
                 val targetIndex = currentIdx + i
-                val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, targetIndex) ?: break
+                val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, targetIndex) ?: continue
                 
                 val contentString = getPurifiedChapterContent(book, chapter)
                 val segments = mutableListOf<String>()
@@ -252,7 +258,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                     }
                 }
             } catch (e: Exception) {
-                AppLog.put("听书预下载异常(第${i}章): ${e.localizedMessage}", e)
+                AppLog.put("预载异常(第${i}章)：${e.localizedMessage}")
             }
         }
     }
@@ -303,13 +309,16 @@ class HttpReadAloudService : BaseReadAloudService(),
     ) {
         val book = ReadBook.book ?: return
         val currentIdx = ReadBook.durChapterIndex
-        val limit = AppConfig.preDownloadNum
         
+        // 修正 1：安全读取设置
+        val limitStr = appCtx.getPrefString(PreferKey.preDownloadNum)
+        val limit = limitStr?.toIntOrNull() ?: AppConfig.preDownloadNum
+
         for (i in 1..limit) {
             try {
                 currentCoroutineContext().ensureActive()
                 val targetIndex = currentIdx + i
-                val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, targetIndex) ?: break
+                val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, targetIndex) ?: continue
                 
                 val contentString = getPurifiedChapterContent(book, chapter)
                 val segments = mutableListOf<String>()
@@ -332,24 +341,18 @@ class HttpReadAloudService : BaseReadAloudService(),
                     downloaderChannel.send(downloader)
                 }
             } catch (e: Exception) {
-                AppLog.put("听书流式预下载异常(第${i}章): ${e.localizedMessage}", e)
+                AppLog.put("流式预载异常(第${i}章)：${e.localizedMessage}")
             }
         }
     }
 
-    /**
-     * 手动净化方法
-     * 修正：使用 allEnabled，并改用 forEach 循环以消除语法歧义
-     */
     private fun getPurifiedChapterContent(book: Book, chapter: BookChapter): String? {
         var content = BookHelp.getContent(book, chapter) ?: return null
         if (AppConfig.replaceEnableDefault) {
             try {
-                // 修正点：DAO 方法名由 getEnabled 改为 allEnabled
                 val rules = appDb.replaceRuleDao.allEnabled
                 rules.forEach { rule ->
                     val pattern = rule.pattern
-                    // 修正点：使用 safe call 和 explicit check 消除语法歧义
                     if (pattern != null && pattern.isNotEmpty()) {
                         try {
                             content = content.replace(pattern.toRegex(), rule.replacement)
@@ -531,7 +534,9 @@ class HttpReadAloudService : BaseReadAloudService(),
 
         val book = ReadBook.book ?: return
         val currentIdx = ReadBook.durChapterIndex
-        val limit = AppConfig.preDownloadNum
+        
+        val limitStr = appCtx.getPrefString(PreferKey.preDownloadNum)
+        val limit = limitStr?.toIntOrNull() ?: AppConfig.preDownloadNum
         
         val protectedPrefixes = mutableSetOf<String>()
         val currentTitle = this.textChapter?.chapter?.title ?: ""
