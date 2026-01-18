@@ -68,8 +68,8 @@ import java.net.SocketTimeoutException
 import kotlin.coroutines.coroutineContext
 
 /**
- * 在线朗读服务 (原版 - BGM 联动修正版)
- * 修正：点击上下句不再导致 BGM 切歌
+ * 在线朗读服务 (原版专用 - 最终构建修复版)
+ * 修复：BgmManager.isPlaying 改为 isPlaying() 解决构建失败
  */
 @SuppressLint("UnsafeOptInUsageError")
 class HttpReadAloudService : BaseReadAloudService(),
@@ -135,8 +135,8 @@ class HttpReadAloudService : BaseReadAloudService(),
         } else {
             super.play()
             
-            // 修正：只有在 BGM 未播放时才启动，避免点击上下句切歌
-            if (AppConfig.isBgmEnabled && !BgmManager.isPlaying) {
+            // 修正点：将 isPlaying 改为 isPlaying()
+            if (AppConfig.isBgmEnabled && !BgmManager.isPlaying()) {
                 BgmManager.play()
             }
 
@@ -582,7 +582,9 @@ class HttpReadAloudService : BaseReadAloudService(),
                 play()
             } else {
                 exoPlayer.play()
-                if (AppConfig.isBgmEnabled && !BgmManager.isPlaying) {
+                
+                // 修正点：将 isPlaying 改为 isPlaying()
+                if (AppConfig.isBgmEnabled && !BgmManager.isPlaying()) {
                     BgmManager.play()
                 }
                 upPlayPos()
@@ -634,7 +636,6 @@ class HttpReadAloudService : BaseReadAloudService(),
             Player.STATE_READY -> {
                 if (pause) return
                 exoPlayer.play()
-                // 修正：彻底移除此处的 BgmManager.play()，防止每句切换都切歌
                 upPlayPos()
             }
             Player.STATE_ENDED -> {
