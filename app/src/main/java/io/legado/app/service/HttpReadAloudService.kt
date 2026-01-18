@@ -68,7 +68,8 @@ import java.net.SocketTimeoutException
 import kotlin.coroutines.coroutineContext
 
 /**
- * 在线朗读服务 (原版 - 朗读设置对齐版)
+ * 在线朗读服务 (原版 - BGM 联动修正版)
+ * 修正：点击上下句不再导致 BGM 切歌
  */
 @SuppressLint("UnsafeOptInUsageError")
 class HttpReadAloudService : BaseReadAloudService(),
@@ -133,7 +134,11 @@ class HttpReadAloudService : BaseReadAloudService(),
             ReadBook.readAloud()
         } else {
             super.play()
-            BgmManager.play()
+            
+            // 修正：只有在 BGM 未播放时才启动，避免点击上下句切歌
+            if (AppConfig.isBgmEnabled && !BgmManager.isPlaying) {
+                BgmManager.play()
+            }
 
             if (AppConfig.streamReadAloudAudio) {
                 downloadAndPlayAudiosStream()
@@ -213,7 +218,6 @@ class HttpReadAloudService : BaseReadAloudService(),
     private suspend fun preDownloadAudios(httpTts: HttpTTS) {
         val book = ReadBook.book ?: return
         val currentIdx = ReadBook.durChapterIndex
-        // 修正：对齐朗读设置中的预载数量
         val limit = AppConfig.audioPreDownloadNum 
         
         for (i in 1..limit) {
@@ -303,7 +307,6 @@ class HttpReadAloudService : BaseReadAloudService(),
     ) {
         val book = ReadBook.book ?: return
         val currentIdx = ReadBook.durChapterIndex
-        // 修正：对齐朗读设置
         val limit = AppConfig.audioPreDownloadNum
         
         for (i in 1..limit) {
@@ -333,7 +336,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                     downloaderChannel.send(downloader)
                 }
             } catch (e: Exception) {
-                AppLog.put("流式音频预载异常(第${i}章): ${e.localizedMessage}", e)
+                AppLog.put("流式预载异常(第${i}章): ${e.localizedMessage}", e)
             }
         }
     }
@@ -526,7 +529,6 @@ class HttpReadAloudService : BaseReadAloudService(),
 
         val book = ReadBook.book ?: return
         val currentIdx = ReadBook.durChapterIndex
-        // 修正：缓存保护数量也对齐音频预载设置
         val limit = AppConfig.audioPreDownloadNum
         
         val protectedPrefixes = mutableSetOf<String>()
@@ -580,7 +582,9 @@ class HttpReadAloudService : BaseReadAloudService(),
                 play()
             } else {
                 exoPlayer.play()
-                BgmManager.play()
+                if (AppConfig.isBgmEnabled && !BgmManager.isPlaying) {
+                    BgmManager.play()
+                }
                 upPlayPos()
             }
         }
@@ -630,7 +634,7 @@ class HttpReadAloudService : BaseReadAloudService(),
             Player.STATE_READY -> {
                 if (pause) return
                 exoPlayer.play()
-                BgmManager.play()
+                // 修正：彻底移除此处的 BgmManager.play()，防止每句切换都切歌
                 upPlayPos()
             }
             Player.STATE_ENDED -> {
