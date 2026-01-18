@@ -4,7 +4,7 @@ on:
 
 permissions:
   contents: write   # 允许修改代码内容 [cite: 2026-01-17]
-  workflows: write  # 允许同步上游对工作流脚本的修改
+  actions: write    # 修正：使用 actions 替代错误的 workflows 以允许同步脚本修改
 
 jobs:
   sync:
