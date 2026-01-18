@@ -1,5 +1,5 @@
 name: 自动同步上游并保留我的修改
-on:
+于:
   workflow_dispatch: # 手动触发按钮
 
 permissions:
