@@ -68,11 +68,8 @@ import java.net.SocketTimeoutException
 import kotlin.coroutines.coroutineContext
 
 /**
- * 在线朗读服务 (原版 - 终极修复版)
- * 1. 修复构建失败：移除不存在的 ContentProcessor
- * 2. 完美解决净化：手动实现替换规则逻辑
- * 3. 修复预下载中断：try-catch 移入循环
- * 4. 修复设置无效：对接正确的 AppConfig Key
+ * 在线朗读服务 (原版 - 终极修复版 V2)
+ * 修正：ReplaceRuleDao 方法名为 allEnabled，优化循环语法
  */
 @SuppressLint("UnsafeOptInUsageError")
 class HttpReadAloudService : BaseReadAloudService(),
@@ -225,7 +222,6 @@ class HttpReadAloudService : BaseReadAloudService(),
                 val targetIndex = currentIdx + i
                 val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, targetIndex) ?: break
                 
-                // 关键修正：调用手动实现的净化方法
                 val contentString = getPurifiedChapterContent(book, chapter)
                 val segments = mutableListOf<String>()
 
@@ -315,7 +311,6 @@ class HttpReadAloudService : BaseReadAloudService(),
                 val targetIndex = currentIdx + i
                 val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, targetIndex) ?: break
                 
-                // 关键修正：调用手动实现的净化方法
                 val contentString = getPurifiedChapterContent(book, chapter)
                 val segments = mutableListOf<String>()
 
@@ -343,26 +338,22 @@ class HttpReadAloudService : BaseReadAloudService(),
     }
 
     /**
-     * 【核心 Helper】手动获取净化后的章节内容
-     * 替代不存在的 ContentProcessor，确保 MD5 计算与实际阅读一致
+     * 手动净化方法
+     * 修正：使用 allEnabled，并改用 forEach 循环以消除语法歧义
      */
     private fun getPurifiedChapterContent(book: Book, chapter: BookChapter): String? {
-        // 1. 获取原始文本
         var content = BookHelp.getContent(book, chapter) ?: return null
-
-        // 2. 如果开启了替换净化，则手动应用规则
         if (AppConfig.replaceEnableDefault) {
             try {
-                // 获取启用的替换规则 (注意：这里在IO线程执行，是安全的)
-                val rules = appDb.replaceRuleDao.getEnabled()
-                for (rule in rules) {
-                    if (!rule.pattern.isNullOrEmpty()) {
+                // 修正点：DAO 方法名由 getEnabled 改为 allEnabled
+                val rules = appDb.replaceRuleDao.allEnabled
+                rules.forEach { rule ->
+                    val pattern = rule.pattern
+                    // 修正点：使用 safe call 和 explicit check 消除语法歧义
+                    if (pattern != null && pattern.isNotEmpty()) {
                         try {
-                            // 执行正则替换，模拟阅读界面的净化逻辑
-                            content = content.replace(rule.pattern.toRegex(), rule.replacement)
-                        } catch (e: Exception) {
-                            // 忽略单个错误的正则，防止崩溃
-                        }
+                            content = content.replace(pattern.toRegex(), rule.replacement)
+                        } catch (_: Exception) {}
                     }
                 }
             } catch (e: Exception) {
@@ -484,7 +475,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                             AppLog.put(msg1, e, true)
                             throw e
                         } else {
-                            AppLog.put("TTS下载音频出错，使用无声音频代替。\n朗读文本：$speakText")
+                            AppLog.put("TTS下载音频出错，使用无声音评代替。\n朗读文本：$speakText")
                             break
                         }
                     }
