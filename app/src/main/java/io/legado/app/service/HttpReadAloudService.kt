@@ -28,7 +28,6 @@ import com.script.ScriptException
 import io.legado.app.R
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.AppPattern
-import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
@@ -45,7 +44,6 @@ import io.legado.app.model.analyzeRule.AnalyzeUrl
 import io.legado.app.ui.book.read.page.entities.TextChapter
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.MD5Utils
-import io.legado.app.utils.getPrefString
 import io.legado.app.utils.printOnDebug
 import io.legado.app.utils.servicePendingIntent
 import io.legado.app.utils.toastOnUi
@@ -70,7 +68,7 @@ import java.net.SocketTimeoutException
 import kotlin.coroutines.coroutineContext
 
 /**
- * 在线朗读服务 (原版专用 - 预下载修复版)
+ * 在线朗读服务 (原版 - 朗读设置对齐版)
  */
 @SuppressLint("UnsafeOptInUsageError")
 class HttpReadAloudService : BaseReadAloudService(),
@@ -215,18 +213,14 @@ class HttpReadAloudService : BaseReadAloudService(),
     private suspend fun preDownloadAudios(httpTts: HttpTTS) {
         val book = ReadBook.book ?: return
         val currentIdx = ReadBook.durChapterIndex
+        // 修正：对齐朗读设置中的预载数量
+        val limit = AppConfig.audioPreDownloadNum 
         
-        // 修正 1：安全读取设置。由于 UI 是 EditText，数据存的是 String，需转 Int
-        val limitStr = appCtx.getPrefString(PreferKey.preDownloadNum)
-        val limit = limitStr?.toIntOrNull() ?: AppConfig.preDownloadNum
-        
-        AppLog.putDebug("听书预载启动：计划缓存后续 $limit 章")
-
         for (i in 1..limit) {
             try {
                 currentCoroutineContext().ensureActive()
                 val targetIndex = currentIdx + i
-                val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, targetIndex) ?: continue
+                val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, targetIndex) ?: break
                 
                 val contentString = getPurifiedChapterContent(book, chapter)
                 val segments = mutableListOf<String>()
@@ -258,7 +252,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                     }
                 }
             } catch (e: Exception) {
-                AppLog.put("预载异常(第${i}章)：${e.localizedMessage}")
+                AppLog.put("音频预载异常(第${i}章): ${e.localizedMessage}", e)
             }
         }
     }
@@ -309,16 +303,14 @@ class HttpReadAloudService : BaseReadAloudService(),
     ) {
         val book = ReadBook.book ?: return
         val currentIdx = ReadBook.durChapterIndex
+        // 修正：对齐朗读设置
+        val limit = AppConfig.audioPreDownloadNum
         
-        // 修正 1：安全读取设置
-        val limitStr = appCtx.getPrefString(PreferKey.preDownloadNum)
-        val limit = limitStr?.toIntOrNull() ?: AppConfig.preDownloadNum
-
         for (i in 1..limit) {
             try {
                 currentCoroutineContext().ensureActive()
                 val targetIndex = currentIdx + i
-                val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, targetIndex) ?: continue
+                val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, targetIndex) ?: break
                 
                 val contentString = getPurifiedChapterContent(book, chapter)
                 val segments = mutableListOf<String>()
@@ -341,7 +333,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                     downloaderChannel.send(downloader)
                 }
             } catch (e: Exception) {
-                AppLog.put("流式预载异常(第${i}章)：${e.localizedMessage}")
+                AppLog.put("流式音频预载异常(第${i}章): ${e.localizedMessage}", e)
             }
         }
     }
@@ -360,7 +352,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                     }
                 }
             } catch (e: Exception) {
-                AppLog.put("应用替换规则失败", e)
+                AppLog.put("预载净化失败", e)
             }
         }
         return content
@@ -534,9 +526,8 @@ class HttpReadAloudService : BaseReadAloudService(),
 
         val book = ReadBook.book ?: return
         val currentIdx = ReadBook.durChapterIndex
-        
-        val limitStr = appCtx.getPrefString(PreferKey.preDownloadNum)
-        val limit = limitStr?.toIntOrNull() ?: AppConfig.preDownloadNum
+        // 修正：缓存保护数量也对齐音频预载设置
+        val limit = AppConfig.audioPreDownloadNum
         
         val protectedPrefixes = mutableSetOf<String>()
         val currentTitle = this.textChapter?.chapter?.title ?: ""
