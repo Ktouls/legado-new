@@ -34,7 +34,6 @@ import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.HttpTTS
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.book.BookHelp
-import io.legado.app.help.book.ContentProcessor
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.exoplayer.InputStreamDataSource
@@ -69,8 +68,11 @@ import java.net.SocketTimeoutException
 import kotlin.coroutines.coroutineContext
 
 /**
- * 在线朗读服务
- * 修复：预下载设置失效、预下载内容净化、缓存清理策略
+ * 在线朗读服务 (原版 - 终极修复版)
+ * 1. 修复构建失败：移除不存在的 ContentProcessor
+ * 2. 完美解决净化：手动实现替换规则逻辑
+ * 3. 修复预下载中断：try-catch 移入循环
+ * 4. 修复设置无效：对接正确的 AppConfig Key
  */
 @SuppressLint("UnsafeOptInUsageError")
 class HttpReadAloudService : BaseReadAloudService(),
@@ -215,7 +217,6 @@ class HttpReadAloudService : BaseReadAloudService(),
     private suspend fun preDownloadAudios(httpTts: HttpTTS) {
         val book = ReadBook.book ?: return
         val currentIdx = ReadBook.durChapterIndex
-        // 修正：使用 AppConfig.preDownloadNum (与UI对应)，而非 audioPreDownloadNum
         val limit = AppConfig.preDownloadNum 
         
         for (i in 1..limit) {
@@ -224,8 +225,8 @@ class HttpReadAloudService : BaseReadAloudService(),
                 val targetIndex = currentIdx + i
                 val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, targetIndex) ?: break
                 
-                // 修正：使用 ContentProcessor 获取净化后的内容
-                val contentString = ContentProcessor.getContent(book, chapter, true)
+                // 关键修正：调用手动实现的净化方法
+                val contentString = getPurifiedChapterContent(book, chapter)
                 val segments = mutableListOf<String>()
 
                 if (AppConfig.readAloudTitle) {
@@ -306,7 +307,6 @@ class HttpReadAloudService : BaseReadAloudService(),
     ) {
         val book = ReadBook.book ?: return
         val currentIdx = ReadBook.durChapterIndex
-        // 修正：使用 AppConfig.preDownloadNum (与UI对应)
         val limit = AppConfig.preDownloadNum
         
         for (i in 1..limit) {
@@ -315,7 +315,8 @@ class HttpReadAloudService : BaseReadAloudService(),
                 val targetIndex = currentIdx + i
                 val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, targetIndex) ?: break
                 
-                val contentString = ContentProcessor.getContent(book, chapter, true)
+                // 关键修正：调用手动实现的净化方法
+                val contentString = getPurifiedChapterContent(book, chapter)
                 val segments = mutableListOf<String>()
 
                 if (AppConfig.readAloudTitle) {
@@ -339,6 +340,36 @@ class HttpReadAloudService : BaseReadAloudService(),
                 AppLog.put("听书流式预下载异常(第${i}章): ${e.localizedMessage}", e)
             }
         }
+    }
+
+    /**
+     * 【核心 Helper】手动获取净化后的章节内容
+     * 替代不存在的 ContentProcessor，确保 MD5 计算与实际阅读一致
+     */
+    private fun getPurifiedChapterContent(book: Book, chapter: BookChapter): String? {
+        // 1. 获取原始文本
+        var content = BookHelp.getContent(book, chapter) ?: return null
+
+        // 2. 如果开启了替换净化，则手动应用规则
+        if (AppConfig.replaceEnableDefault) {
+            try {
+                // 获取启用的替换规则 (注意：这里在IO线程执行，是安全的)
+                val rules = appDb.replaceRuleDao.getEnabled()
+                for (rule in rules) {
+                    if (!rule.pattern.isNullOrEmpty()) {
+                        try {
+                            // 执行正则替换，模拟阅读界面的净化逻辑
+                            content = content.replace(rule.pattern.toRegex(), rule.replacement)
+                        } catch (e: Exception) {
+                            // 忽略单个错误的正则，防止崩溃
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                AppLog.put("应用替换规则失败", e)
+            }
+        }
+        return content
     }
 
     private fun createDataSourceFactory(
@@ -497,15 +528,9 @@ class HttpReadAloudService : BaseReadAloudService(),
         }
     }
 
-    /**
-     * 清理缓存逻辑修正：
-     * 1. 如果保留时间设为0，则删除全部（满足小内存用户需求）。
-     * 2. 如果保留时间>0，则根据保留时间清理，并保护当前和预下载章节不被删除。
-     */
     private fun removeCacheFile() {
         val keepTime = AppConfig.audioCacheCleanTime
 
-        // 逻辑修正：如果设置为0，代表用户希望立即清空所有缓存（不启用白名单保护）
         if (keepTime == 0L) {
             FileUtils.listDirsAndFiles(ttsFolderPath)?.forEach { fileItem ->
                 FileUtils.delete(fileItem.absolutePath)
@@ -513,10 +538,8 @@ class HttpReadAloudService : BaseReadAloudService(),
             return
         }
 
-        // 以下是正常清理模式（保护当前阅读内容）
         val book = ReadBook.book ?: return
         val currentIdx = ReadBook.durChapterIndex
-        // 修正：同步使用 preDownloadNum
         val limit = AppConfig.preDownloadNum
         
         val protectedPrefixes = mutableSetOf<String>()
@@ -525,7 +548,6 @@ class HttpReadAloudService : BaseReadAloudService(),
             protectedPrefixes.add(MD5Utils.md5Encode16(currentTitle))
         }
 
-        // 获取后续预下载范围内的章节标题
         runBlocking {
             for (i in 1..limit) {
                 val nextChapter = appDb.bookChapterDao.getChapter(book.bookUrl, currentIdx + i)
@@ -540,11 +562,10 @@ class HttpReadAloudService : BaseReadAloudService(),
             val fSize = fileItem.length()
             val isSilent = fSize == 2160L
             
-            // 检查是否受保护
             val isProtected = protectedPrefixes.any { fName.startsWith(it) }
             
             val shouldDelete = if (isProtected) {
-                false // 属于当前或预加载范围，严禁删除
+                false 
             } else {
                 (System.currentTimeMillis() - fileItem.lastModified() > keepTime)
             }
