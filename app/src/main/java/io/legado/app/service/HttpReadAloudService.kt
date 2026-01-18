@@ -34,6 +34,7 @@ import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.HttpTTS
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.book.BookHelp
+import io.legado.app.help.book.ContentProcessor
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.exoplayer.InputStreamDataSource
@@ -69,7 +70,7 @@ import kotlin.coroutines.coroutineContext
 
 /**
  * 在线朗读服务
- * 已集成：BGM 联动控制、智能预下载保护机制、全文件显式变量名重构
+ * 修复：预下载设置失效、预下载内容净化、缓存清理策略
  */
 @SuppressLint("UnsafeOptInUsageError")
 class HttpReadAloudService : BaseReadAloudService(),
@@ -211,22 +212,20 @@ class HttpReadAloudService : BaseReadAloudService(),
         }
     }
 
-    private fun getChapterContent(book: Book, chapter: BookChapter): String? {
-        return BookHelp.getContent(book, chapter)
-    }
-
     private suspend fun preDownloadAudios(httpTts: HttpTTS) {
         val book = ReadBook.book ?: return
         val currentIdx = ReadBook.durChapterIndex
-        val limit = AppConfig.audioPreDownloadNum
+        // 修正：使用 AppConfig.preDownloadNum (与UI对应)，而非 audioPreDownloadNum
+        val limit = AppConfig.preDownloadNum 
         
-        try {
-            for (i in 1..limit) {
+        for (i in 1..limit) {
+            try {
                 currentCoroutineContext().ensureActive()
                 val targetIndex = currentIdx + i
                 val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, targetIndex) ?: break
                 
-                val contentString = getChapterContent(book, chapter)
+                // 修正：使用 ContentProcessor 获取净化后的内容
+                val contentString = ContentProcessor.getContent(book, chapter, true)
                 val segments = mutableListOf<String>()
 
                 if (AppConfig.readAloudTitle) {
@@ -255,9 +254,9 @@ class HttpReadAloudService : BaseReadAloudService(),
                         }
                     }
                 }
+            } catch (e: Exception) {
+                AppLog.put("听书预下载异常(第${i}章): ${e.localizedMessage}", e)
             }
-        } catch (e: Exception) {
-            AppLog.put("听书预下载异常: ${e.localizedMessage}", e)
         }
     }
 
@@ -307,15 +306,16 @@ class HttpReadAloudService : BaseReadAloudService(),
     ) {
         val book = ReadBook.book ?: return
         val currentIdx = ReadBook.durChapterIndex
-        val limit = AppConfig.audioPreDownloadNum
+        // 修正：使用 AppConfig.preDownloadNum (与UI对应)
+        val limit = AppConfig.preDownloadNum
         
-        try {
-            for (i in 1..limit) {
+        for (i in 1..limit) {
+            try {
                 currentCoroutineContext().ensureActive()
                 val targetIndex = currentIdx + i
                 val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, targetIndex) ?: break
                 
-                val contentString = getChapterContent(book, chapter)
+                val contentString = ContentProcessor.getContent(book, chapter, true)
                 val segments = mutableListOf<String>()
 
                 if (AppConfig.readAloudTitle) {
@@ -335,9 +335,9 @@ class HttpReadAloudService : BaseReadAloudService(),
                     val downloader = createDownloader(dataSourceFactory, fileName)
                     downloaderChannel.send(downloader)
                 }
+            } catch (e: Exception) {
+                AppLog.put("听书流式预下载异常(第${i}章): ${e.localizedMessage}", e)
             }
-        } catch (e: Exception) {
-            AppLog.put("听书流式预下载异常: ${e.localizedMessage}", e)
         }
     }
 
@@ -381,7 +381,7 @@ class HttpReadAloudService : BaseReadAloudService(),
     private fun createMediaSource(factory: DataSource.Factory, fileName: String): MediaSource {
         val mediaItem = MediaItem.Builder()
             .setUri(fileName)
-            .setMediaId(fileName) // 显式设置 ID 确保缓存 Key 一致
+            .setMediaId(fileName)
             .build()
         return DefaultMediaSourceFactory(this)
             .setDataSourceFactory(factory)
@@ -497,15 +497,28 @@ class HttpReadAloudService : BaseReadAloudService(),
         }
     }
 
+    /**
+     * 清理缓存逻辑修正：
+     * 1. 如果保留时间设为0，则删除全部（满足小内存用户需求）。
+     * 2. 如果保留时间>0，则根据保留时间清理，并保护当前和预下载章节不被删除。
+     */
     private fun removeCacheFile() {
         val keepTime = AppConfig.audioCacheCleanTime
-        if (keepTime <= 0) return 
 
+        // 逻辑修正：如果设置为0，代表用户希望立即清空所有缓存（不启用白名单保护）
+        if (keepTime == 0L) {
+            FileUtils.listDirsAndFiles(ttsFolderPath)?.forEach { fileItem ->
+                FileUtils.delete(fileItem.absolutePath)
+            }
+            return
+        }
+
+        // 以下是正常清理模式（保护当前阅读内容）
         val book = ReadBook.book ?: return
         val currentIdx = ReadBook.durChapterIndex
-        val limit = AppConfig.audioPreDownloadNum
+        // 修正：同步使用 preDownloadNum
+        val limit = AppConfig.preDownloadNum
         
-        // 核心修复：收集当前章节以及所有预下载章节的标题 MD5，全部加入白名单
         val protectedPrefixes = mutableSetOf<String>()
         val currentTitle = this.textChapter?.chapter?.title ?: ""
         if (currentTitle.isNotEmpty()) {
@@ -522,13 +535,12 @@ class HttpReadAloudService : BaseReadAloudService(),
             }
         }
 
-        val fileList = FileUtils.listDirsAndFiles(ttsFolderPath)
-        fileList?.forEach { fileItem ->
+        FileUtils.listDirsAndFiles(ttsFolderPath)?.forEach { fileItem ->
             val fName = fileItem.name
             val fSize = fileItem.length()
             val isSilent = fSize == 2160L
             
-            // 检查文件名是否以白名单中任何一个 MD5 开头
+            // 检查是否受保护
             val isProtected = protectedPrefixes.any { fName.startsWith(it) }
             
             val shouldDelete = if (isProtected) {
