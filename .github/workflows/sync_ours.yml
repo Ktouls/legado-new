@@ -2,6 +2,9 @@ name: 自动同步上游并保留我的修改
 on:
   workflow_dispatch: # 手动触发按钮
 
+permissions:
+  contents: write # 显式开启写入权限，确保 push 操作 100% 成功
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -9,7 +12,7 @@ jobs:
       - name: 检出 Test 分支代码
         uses: actions/checkout@v4
         with:
-          ref: Test # 指定操作 Test 分支
+          ref: Test # 对应您的 Test 分支
           fetch-depth: 0
 
       - name: 配置 Git 环境
@@ -19,12 +22,12 @@ jobs:
 
       - name: 执行合并（优先保留我的代码）
         run: |
-          # 添加上游仓库地址
+          # 添加原版上游仓库地址
           git remote add upstream https://github.com/LegadoTeam/legado.git
           git fetch upstream
-          # 使用 -X ours 策略：若有代码冲突，自动选择保留您的修改
+          # 强制使用 -X ours 策略并允许无关历史合并，严禁删除您的原有逻辑 [cite: 2026-01-17]
           git merge upstream/master -X ours --allow-unrelated-histories
 
       - name: 推送更新回 Test 分支
         run: |
-          git push origin Test #
+          git push origin Test # 推送到您的 Test 分支
