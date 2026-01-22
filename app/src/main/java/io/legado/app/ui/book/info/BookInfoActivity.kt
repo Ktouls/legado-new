@@ -8,11 +8,13 @@ import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
+import android.view.textclassifier.TextClassifier
 import android.widget.CheckBox
 import android.widget.LinearLayout
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
+import com.bumptech.glide.Glide
 import io.legado.app.R
 import io.legado.app.base.VMBaseActivity
 import io.legado.app.constant.BookType
@@ -25,6 +27,8 @@ import io.legado.app.data.entities.BookSource
 import io.legado.app.databinding.ActivityBookInfoBinding
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.AppWebDav
+import io.legado.app.help.GlideImageGetter
+import io.legado.app.help.TextViewTagHandler
 import io.legado.app.help.book.addType
 import io.legado.app.help.book.getRemoteUrl
 import io.legado.app.help.book.isAudio
@@ -54,7 +58,7 @@ import io.legado.app.ui.book.manga.ReadMangaActivity
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.ReadBookActivity.Companion.RESULT_DELETED
 import io.legado.app.ui.book.search.SearchActivity
-import io.legado.app.ui.book.source.SourceCallBack
+import io.legado.app.model.SourceCallBack
 import io.legado.app.ui.book.source.edit.BookSourceEditActivity
 import io.legado.app.ui.book.toc.TocActivityResult
 import io.legado.app.ui.file.HandleFileContract
@@ -75,11 +79,16 @@ import io.legado.app.utils.longToastOnUi
 import io.legado.app.utils.observeEvent
 import io.legado.app.utils.openFileUri
 import io.legado.app.utils.sendToClip
+import io.legado.app.utils.setHtml
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import io.legado.app.utils.visible
+import io.noties.markwon.Markwon
+import io.noties.markwon.ext.tables.TablePlugin
+import io.noties.markwon.html.HtmlPlugin
+import io.noties.markwon.image.glide.GlideImagesPlugin
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -165,6 +174,18 @@ class BookInfoActivity :
 
     override val binding by viewBinding(ActivityBookInfoBinding::inflate)
     override val viewModel by viewModels<BookInfoViewModel>()
+    private var initGetter = false
+    private val glideImageGetter by lazy {
+        initGetter = true
+        GlideImageGetter(this, binding.tvIntro, lifecycle)
+    }
+    private val textViewTagHandler by lazy {
+        TextViewTagHandler(object : TextViewTagHandler.OnButtonClickListener {
+            override fun onButtonClick(name: String, click: String?) {
+                viewModel.onButtonClick(this@BookInfoActivity, name, click)
+            }
+        })
+    }
 
     @SuppressLint("PrivateResource")
     override fun onActivityCreated(savedInstanceState: Bundle?) {
@@ -378,7 +399,8 @@ class BookInfoActivity :
         tvAuthor.text = getString(R.string.author_show, book.getRealAuthor())
         tvOrigin.text = getString(R.string.origin_show, book.originName)
         tvLasted.text = getString(R.string.lasted_show, book.latestChapterTitle)
-        tvIntro.text = book.getDisplayIntro()
+        val intro = book.getDisplayIntro()
+        showBookIntro(intro)
         if (book.isWebFile) {
             llToc.gone()
             tvLasted.text = getString(R.string.lasted_show, "下载中...")
@@ -389,6 +411,46 @@ class BookInfoActivity :
         upTvBookshelf()
         upKinds(book)
         upGroup(book.group)
+    }
+
+    private fun showBookIntro(intro: String?) {
+        val tvIntro = binding.tvIntro
+        if (intro.isNullOrBlank()) {
+            tvIntro.visible()
+        } else if (intro.startsWith("<usehtml>")) {
+            val lastIndex = intro.lastIndexOf("<")
+            if (lastIndex < 9) {
+                tvIntro.text = intro
+                return
+            }
+            val html = intro.substring(9, lastIndex)
+            tvIntro.setHtml(html, glideImageGetter, textViewTagHandler)
+        } else if (intro.startsWith("<md>")) {
+            val lastIndex = intro.lastIndexOf("<")
+            if (lastIndex < 4) {
+                tvIntro.text = intro
+                return
+            }
+            val mark = intro.substring(4, lastIndex)
+            lifecycleScope.launch {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    tvIntro.setTextClassifier(TextClassifier.NO_OP)
+                }
+                val context = this@BookInfoActivity
+                val markwon: Markwon
+                val markdown = withContext(IO) {
+                    markwon = Markwon.builder(context)
+                        .usePlugin(GlideImagesPlugin.create(Glide.with(context)))
+                        .usePlugin(HtmlPlugin.create())
+                        .usePlugin(TablePlugin.create(context))
+                        .build()
+                    markwon.toMarkdown(mark)
+                }
+                markwon.setParsedMarkdown(tvIntro, markdown)
+            }
+        } else {
+            tvIntro.text = intro
+        }
     }
 
     private fun upKinds(book: Book) = binding.run {
@@ -843,6 +905,27 @@ class BookInfoActivity :
             }
         } else {
             waitDialog.dismiss()
+        }
+    }
+
+     override fun onStart() {
+         super.onStart()
+         if (initGetter) {
+             glideImageGetter.start()
+         }
+     }
+
+     override fun onStop() {
+         super.onStop()
+         if (initGetter) {
+             glideImageGetter.stop()
+         }
+     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (initGetter) {
+            glideImageGetter.clear()
         }
     }
 

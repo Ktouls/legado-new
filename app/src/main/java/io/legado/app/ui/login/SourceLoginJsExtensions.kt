@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.launch
 import java.io.File
 
+@Suppress("unused")
 class SourceLoginJsExtensions(
     activity: AppCompatActivity?, source: BaseSource?,
     private val callback: Callback? = null
@@ -24,7 +25,6 @@ class SourceLoginJsExtensions(
     interface Callback {
         fun upUiData(data: Map<String, String?>?)
         fun reUiView()
-        fun reExploreView()
     }
 
     fun upLoginData(data: Map<String, String?>?) {
@@ -36,7 +36,7 @@ class SourceLoginJsExtensions(
     }
 
     fun refreshExplore() {
-        callback?.reExploreView()
+        callback?.reUiView()
     }
 
     fun refreshBookInfo() {

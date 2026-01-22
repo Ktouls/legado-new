@@ -1,22 +1,34 @@
 package io.legado.app.ui.dict
 
+import android.os.Build
 import android.os.Bundle
 import android.text.method.LinkMovementMethod
 import android.view.View
 import android.view.ViewGroup
+import android.view.textclassifier.TextClassifier
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
+import com.bumptech.glide.Glide
 import com.google.android.material.tabs.TabLayout
 import io.legado.app.R
 import io.legado.app.base.BaseDialogFragment
 import io.legado.app.data.entities.DictRule
 import io.legado.app.databinding.DialogDictBinding
 import io.legado.app.help.GlideImageGetter
+import io.legado.app.help.TextViewTagHandler
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.lib.theme.backgroundColor
 import io.legado.app.utils.setHtml
 import io.legado.app.utils.setLayout
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
+import io.noties.markwon.Markwon
+import io.noties.markwon.ext.tables.TablePlugin
+import io.noties.markwon.html.HtmlPlugin
+import io.noties.markwon.image.glide.GlideImagesPlugin
+import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 词典
@@ -32,7 +44,11 @@ class DictDialog() : BaseDialogFragment(R.layout.dialog_dict) {
     private val viewModel by viewModels<DictViewModel>()
     private val binding by viewBinding(DialogDictBinding::bind)
     private var word: String? = null
-    private var glideImageGetter: GlideImageGetter? = null
+    private var initGetter = false
+    private val glideImageGetter by lazy {
+        initGetter = true
+        GlideImageGetter(requireContext(), binding.tvDict, this@DictDialog.lifecycle)
+    }
 
     override fun onStart() {
         super.onStart()
@@ -61,9 +77,37 @@ class DictDialog() : BaseDialogFragment(R.layout.dialog_dict) {
                 binding.rotateLoading.visible()
                 viewModel.dict(dictRule, word!!) {
                     binding.rotateLoading.inVisible()
-                    glideImageGetter?.clear()
-                    glideImageGetter = GlideImageGetter.create(requireContext(), binding.tvDict, it)
-                    binding.tvDict.setHtml(it, glideImageGetter)
+                    val contentTrimS = it.trimStart()
+                    if (contentTrimS.startsWith("<md>")) {
+                        val lastIndex = contentTrimS.lastIndexOf("<")
+                        if (lastIndex < 4) {
+                            binding.tvDict.text = contentTrimS
+                            return@dict
+                        }
+                        val mark = contentTrimS.substring(4, lastIndex)
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                binding.tvDict.setTextClassifier(TextClassifier.NO_OP)
+                            }
+                            val markwon: Markwon
+                            val markdown = withContext(IO) {
+                                markwon = Markwon.builder(requireContext())
+                                    .usePlugin(GlideImagesPlugin.create(Glide.with(requireContext())))
+                                    .usePlugin(HtmlPlugin.create())
+                                    .usePlugin(TablePlugin.create(requireContext()))
+                                    .build()
+                                markwon.toMarkdown(mark)
+                            }
+                            markwon.setParsedMarkdown(binding.tvDict, markdown)
+                        }
+                        return@dict
+                    }
+                    val textViewTagHandler = TextViewTagHandler(object : TextViewTagHandler.OnButtonClickListener {
+                        override fun onButtonClick(name: String, click: String?) {
+                            viewModel.onButtonClick(dictRule, name, click)
+                        }
+                    })
+                    binding.tvDict.setHtml(it, glideImageGetter, textViewTagHandler)
                 }
             }
         })
@@ -90,8 +134,9 @@ class DictDialog() : BaseDialogFragment(R.layout.dialog_dict) {
     }
 
     override fun onDestroyView() {
-        glideImageGetter?.clear()
-        glideImageGetter = null
         super.onDestroyView()
+        if (initGetter) {
+            glideImageGetter.clear()
+        }
     }
 }
